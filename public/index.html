@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>マニュアル</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <span class="book-icon" aria-hidden="true"></span>
+        <h1 class="book-title" id="bookTitle">マニュアル</h1>
+      </div>
+      <nav class="toc" id="toc" aria-label="目次"></nav>
+    </aside>
+
+    <main class="stage" id="stage">
+      <header class="stage-head">
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="目次を開く">☰</button>
+        <div class="crumbs" id="crumbs"></div>
+        <div class="counter" id="counter"></div>
+      </header>
+
+      <div class="viewport" id="viewport">
+        <div class="track" id="track"></div>
+      </div>
+
+      <button class="nav-btn prev" id="prevBtn" aria-label="前のページ">‹</button>
+      <button class="nav-btn next" id="nextBtn" aria-label="次のページ">›</button>
+
+      <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
+    </main>
+  </div>
+  <div class="scrim" id="scrim"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
