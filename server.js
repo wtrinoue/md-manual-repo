@@ -1,17 +1,20 @@
 // md-manual サーバー（依存なし）
 //   /            → public/ の静的ファイル
-//   /tree.json   → pages/ フォルダーの木構造（JSON。本番では scripts/build.js が静的ファイルとして出力）
+//   /tree.json   → pages/ フォルダーの木構造と settings/settings.json の設定（JSON。本番では scripts/build.js が静的ファイルとして出力）
 //   /pages/...   → pages/ 内の Markdown や画像をそのまま配信
-//   /events      → pages/ の変更を通知（自動リロード用の Server-Sent Events）
+//   /events      → pages/ と settings/ の変更を通知（自動リロード用の Server-Sent Events）
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { readTree } = require('./lib/tree');
+const { readSettings, applySettingsToHtml } = require('./lib/settings');
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const PAGES_DIR = path.join(ROOT, 'pages');
+const SETTINGS_DIR = path.join(ROOT, 'settings');
+const SETTINGS_FILE = path.join(SETTINGS_DIR, 'settings.json');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -59,10 +62,12 @@ function notifyChange() {
     for (const res of clients) res.write('data: change\n\n');
   }, 150);
 }
-try {
-  fs.watch(PAGES_DIR, { recursive: true }, notifyChange);
-} catch (e) {
-  console.warn('pages/ の変更監視を開始できませんでした（自動リロードは無効）:', e.message);
+for (const dir of [PAGES_DIR, SETTINGS_DIR]) {
+  try {
+    fs.watch(dir, { recursive: true }, notifyChange);
+  } catch (e) {
+    console.warn(`${path.basename(dir)}/ の変更監視を開始できませんでした（自動リロードは無効）:`, e.message);
+  }
 }
 
 const server = http.createServer((req, res) => {
@@ -76,7 +81,7 @@ const server = http.createServer((req, res) => {
   if (pathname === '/tree.json') {
     try {
       // live: true のときだけブラウザが自動リロードを使う
-      const tree = { ...readTree(PAGES_DIR), live: true };
+      const tree = { ...readTree(PAGES_DIR), settings: readSettings(SETTINGS_FILE), live: true };
       return send(res, 200, JSON.stringify(tree), MIME['.json']);
     } catch (e) {
       return send(res, 500, String(e));
@@ -99,12 +104,23 @@ const server = http.createServer((req, res) => {
     return serveFile(res, PAGES_DIR, pathname.slice('/pages/'.length));
   }
 
-  return serveFile(res, PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname.slice(1));
+  // index.html にはタイトルなどの設定を埋め込んで返す
+  if (pathname === '/' || pathname === '/index.html') {
+    try {
+      const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+      return send(res, 200, applySettingsToHtml(html, readSettings(SETTINGS_FILE)), MIME['.html']);
+    } catch (e) {
+      return send(res, 500, String(e));
+    }
+  }
+
+  return serveFile(res, PUBLIC_DIR, pathname.slice(1));
 });
 
 if (!fs.existsSync(PAGES_DIR)) fs.mkdirSync(PAGES_DIR);
+if (!fs.existsSync(SETTINGS_DIR)) fs.mkdirSync(SETTINGS_DIR);
 
 server.listen(PORT, () => {
   console.log(`md-manual: http://localhost:${PORT}`);
-  console.log('pages/ フォルダーの Markdown を編集すると自動で再読み込みされます。');
+  console.log('pages/ の Markdown や settings/settings.json を編集すると自動で再読み込みされます。');
 });

@@ -30,6 +30,25 @@ pages/
 - 画像やリンクは Markdown ファイルからの相対パスで書けます（`.md` へのリンクはそのページへ移動）
 - `pages/` を編集すると、ブラウザが自動で再読み込みされます
 
+## 設定
+
+`settings/settings.json` でマニュアル全体の設定を変えられます。
+
+```json
+{
+  "title": "マニュアル",
+  "pageWidth": 1100
+}
+```
+
+| 項目 | 内容 |
+| --- | --- |
+| `title` | 左上と、ブラウザのタブに出るタイトル |
+| `pageWidth` | ページ（紙）の最大幅（px）。画面が狭いときは画面に合わせて縮みます |
+
+- 保存すると、ブラウザが自動で再読み込みされます（`npm start` のとき）
+- JSON の書き方が間違っていると、既定値（「マニュアル」）が使われ、ターミナルに警告が出ます
+
 ## GitHub Pages で公開する
 
 `main` ブランチに push すると、GitHub Actions（`.github/workflows/deploy.yml`）が自動でビルドして公開します。
@@ -51,6 +70,8 @@ pages/
 | --- | --- |
 | `server.js` | 開発用サーバー。静的ファイル配信、`/tree.json`（pages の木構造）、`/events`（自動リロード） |
 | `lib/tree.js` | pages フォルダーの探索（サーバーとビルドで共有） |
+| `lib/settings.js` | `settings/settings.json` の読み込み（サーバーとビルドで共有） |
+| `settings/settings.json` | タイトルなどの設定 |
 | `scripts/build.js` | GitHub Pages 用に `dist/` を出力（`tree.json` を静的ファイルとして生成） |
 | `.github/workflows/deploy.yml` | push 時に自動でビルド・公開 |
 | `public/index.html` | 画面の骨組み |

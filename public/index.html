@@ -12,13 +12,15 @@
       <div class="sidebar-head">
         <span class="book-icon" aria-hidden="true"></span>
         <h1 class="book-title" id="bookTitle">マニュアル</h1>
+        <button class="sidebar-close" id="sidebarClose" aria-label="目次をしまう" title="目次をしまう"><span aria-hidden="true">«</span></button>
       </div>
       <nav class="toc" id="toc" aria-label="目次"></nav>
+      <div class="sidebar-resizer" id="sidebarResizer" role="separator" aria-orientation="vertical" aria-label="目次の幅を変える" title="ドラッグで幅を変える（ダブルクリックで元に戻す）"></div>
     </aside>
 
     <main class="stage" id="stage">
       <header class="stage-head">
-        <button class="icon-btn menu-btn" id="menuBtn" aria-label="目次を開く">☰</button>
+        <button class="icon-btn menu-btn" id="menuBtn" aria-label="目次を出す" title="目次を出す">☰</button>
         <div class="crumbs" id="crumbs"></div>
         <div class="counter" id="counter"></div>
       </header>
@@ -29,6 +31,7 @@
 
       <button class="nav-btn prev" id="prevBtn" aria-label="前のページ">‹</button>
       <button class="nav-btn next" id="nextBtn" aria-label="次のページ">›</button>
+      <button class="top-btn" id="topBtn" aria-label="ページの先頭へ戻る" title="ページの先頭へ戻る"><span aria-hidden="true">›</span></button>
 
       <div class="progress" aria-hidden="true"><div class="progress-bar" id="progressBar"></div></div>
     </main>

@@ -9,8 +9,10 @@ const els = {
   counter: $('counter'),
   prev: $('prevBtn'),
   next: $('nextBtn'),
+  top: $('topBtn'),
   progress: $('progressBar'),
   menu: $('menuBtn'),
+  sidebarClose: $('sidebarClose'),
   scrim: $('scrim'),
 };
 
@@ -24,6 +26,7 @@ const state = {
   shelf: [],        // いま開いているフォルダーのページ（左右ボタンで移動できる範囲）
   index: 0,         // shelf 内の位置
   cache: new Map(), // path → markdown テキスト
+  scroll: new Map(), // path → 紙のスクロール位置（別のフォルダーへ移るまで覚えておく）
 };
 
 // ---------- 木構造 → ページ列 ----------
@@ -72,6 +75,17 @@ function urlResolver(pagePath) {
 
 // ---------- 目次 ----------
 
+// フォルダー（章）とマークダウン（ページ）を見分けるアイコン
+const ICONS = {
+  folder: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.75 3.5c0-.55.45-1 1-1h3.4l1.6 1.75h5.5c.55 0 1 .45 1 1v6.75c0 .55-.45 1-1 1H2.75c-.55 0-1-.45-1-1z"/></svg>',
+  page: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.75 1.75h5.5l3 3v9.5h-8.5z"/><path d="M9.25 1.75v3h3M5.75 8h4.5M5.75 10.75h4.5"/></svg>',
+};
+
+function tocLabel(el, icon, text) {
+  el.innerHTML = `<span class="toc-icon">${ICONS[icon]}</span><span class="toc-label"></span>`;
+  el.querySelector('.toc-label').textContent = text;
+}
+
 function renderToc() {
   const build = (node, depth) => {
     const ul = document.createElement('ul');
@@ -83,7 +97,7 @@ function renderToc() {
       a.className = 'toc-page';
       a.href = '#/' + encodePath(p.path);
       a.dataset.path = p.path;
-      a.textContent = p.title;
+      tocLabel(a, 'page', p.title);
       li.append(a);
       ul.append(li);
     }
@@ -96,19 +110,13 @@ function renderToc() {
       const head = document.createElement('button');
       head.className = 'toc-chapter-head';
       head.style.setProperty('--depth', depth);
-      head.innerHTML = '<span class="caret" aria-hidden="true"></span><span class="label"></span>';
-      head.querySelector('.label').textContent = child.title;
+      tocLabel(head, 'folder', child.title);
+      // 目次は常にすべて展開しておき、章をクリックしたらその章の最初のページへ
       head.addEventListener('click', () => {
         const viewing = state.folder === child.path || state.folder.startsWith(child.path + '/');
-        if (viewing) {
-          // いま読んでいるフォルダーなら開閉だけ
-          li.classList.toggle('open');
-        } else {
-          // 別のフォルダーならそのフォルダーのページに切り替える
-          li.classList.add('open');
-          const first = firstPageIn(child);
-          if (first) openPage(first.path);
-        }
+        if (viewing) return;
+        const first = firstPageIn(child);
+        if (first) openPage(first.path);
       });
 
       li.append(head, build(child, depth + 1));
@@ -131,14 +139,18 @@ function updateToc() {
     const inside = page.path.startsWith(li.dataset.path + '/');
     li.classList.toggle('current', inside);
     li.classList.toggle('reading', li.dataset.path === state.folder);
-    if (inside) li.classList.add('open');
   });
 }
 
 // ---------- ページ ----------
 
+// 1 ページ = 縦スクロール枠（.slot）の中の、内容の長さぶんの紙（.page）
 function renderTrack() {
   els.track.replaceChildren(...state.shelf.map((p, i) => {
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.dataset.index = i;
+
     const card = document.createElement('article');
     card.className = 'page';
     card.dataset.index = i;
@@ -156,16 +168,17 @@ function renderTrack() {
 
     card.append(head, body, foot);
     card.addEventListener('click', () => { if (i !== state.index) go(i); });
-    return card;
+    slot.append(card);
+    return slot;
   }));
 }
 
 async function loadPage(i) {
   const page = state.shelf[i];
   if (!page) return;
-  const card = els.track.children[i];
-  if (card.dataset.loaded) return;
-  card.dataset.loaded = '1';
+  const slot = els.track.children[i];
+  if (slot.dataset.loaded) return;
+  slot.dataset.loaded = '1';
 
   let md = state.cache.get(page.path);
   if (md === undefined) {
@@ -178,7 +191,7 @@ async function loadPage(i) {
     state.cache.set(page.path, md);
   }
 
-  const body = card.querySelector('.page-body');
+  const body = slot.querySelector('.page-body');
   body.innerHTML = md.trim() ? renderMarkdown(md, { resolveUrl: urlResolver(page.path) }) : '<p class="empty">（空のページ）</p>';
 
   // 本文に見出しがなければファイル名をタイトルとして表示
@@ -187,23 +200,94 @@ async function loadPage(i) {
     h.textContent = page.title;
     body.prepend(h);
   }
+  addCopyButtons(body);
+  // 自動リロードで描き直したときも、読んでいた位置に戻す
+  slot.scrollTop = state.scroll.get(page.path) ?? 0;
+  updateFade(slot);
+  body.querySelectorAll('img').forEach((img) => img.addEventListener('load', () => updateFade(slot)));
+}
+
+// コードブロック（``` で囲んだ部分）にコピーボタンを付ける
+// pre は横にスクロールするので、ボタンが一緒に流れないよう外側の枠に置く
+function addCopyButtons(body) {
+  body.querySelectorAll('pre').forEach((pre) => {
+    const block = document.createElement('div');
+    block.className = 'code-block';
+    pre.before(block);
+
+    const bar = document.createElement('div');
+    bar.className = 'code-bar';
+    const lang = pre.querySelector('.code-lang');
+    if (lang) bar.append(lang);
+
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.type = 'button';
+    btn.textContent = 'コピー';
+    btn.addEventListener('click', async () => {
+      const ok = await copyText(pre.querySelector('code')?.textContent ?? pre.textContent);
+      btn.textContent = ok ? 'コピーしました' : 'コピーできませんでした';
+      btn.classList.toggle('done', ok);
+      clearTimeout(btn.timer);
+      btn.timer = setTimeout(() => { btn.textContent = 'コピー'; btn.classList.remove('done'); }, 1600);
+    });
+    bar.append(btn);
+    block.append(pre, bar);
+  });
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // clipboard API が使えない環境（http の別ホストなど）向け
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.append(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch {}
+    ta.remove();
+    return ok;
+  }
+}
+
+// 紙が画面の上に吸い込まれている／下に続いているぶんだけ、その端をぼかす
+function updateFade(slot) {
+  const below = slot.scrollHeight - slot.clientHeight - slot.scrollTop;
+  slot.style.setProperty('--fade-top', `${Math.min(Math.max(slot.scrollTop, 0), 56)}px`);
+  slot.style.setProperty('--fade-bottom', `${Math.min(Math.max(below, 0), 72)}px`);
 }
 
 // ---------- 移動 ----------
 
 // 開いているフォルダーの中で移動する
-function go(i, { updateHash = true } = {}) {
+// rise: 紙を画面の下からせり上げる（フォルダーを開いたときだけ。左右の移動では上下に動かさない）
+function go(i, { updateHash = true, rise = false } = {}) {
   if (!state.shelf.length) return;
   i = Math.max(0, Math.min(state.shelf.length - 1, i));
+  const slot = els.track.children[i];
   state.index = i;
   const page = state.shelf[i];
 
   els.track.style.setProperty('--i', i);
-  [...els.track.children].forEach((card, k) => {
-    card.classList.toggle('current', k === i);
-    card.classList.toggle('near', Math.abs(k - i) === 1);
-    card.setAttribute('aria-hidden', k === i ? 'false' : 'true');
+  [...els.track.children].forEach((s, k) => {
+    s.classList.toggle('current', k === i);
+    s.classList.toggle('near', Math.abs(k - i) === 1);
+    s.setAttribute('aria-hidden', k === i ? 'false' : 'true');
   });
+
+  updateFade(slot);
+  updateTopBtn();
+  if (rise) {
+    // スクロール位置はそのまま（同じフォルダーにいる間は覚えている）
+    const card = slot.querySelector('.page');
+    card.classList.remove('rise');
+    void card.offsetWidth;
+    card.classList.add('rise');
+  }
 
   for (let k = i - PRELOAD; k <= i + PRELOAD; k++) loadPage(k);
 
@@ -231,6 +315,7 @@ function go(i, { updateHash = true } = {}) {
 
 // 開いているフォルダーを切り替える
 function showFolder(folder) {
+  if (folder !== state.folder) state.scroll.clear();
   state.folder = folder;
   state.shelf = state.pages.filter((p) => folderOf(p) === folder);
   renderTrack();
@@ -241,6 +326,7 @@ function openPage(path, { updateHash = true, reload = false } = {}) {
   const page = state.pages.find((p) => p.path === path);
   if (!page) return false;
 
+  const first = state.folder === null; // マニュアルを開いて最初の表示
   const switching = folderOf(page) !== state.folder;
   if (switching || reload) showFolder(folderOf(page));
   const i = state.shelf.findIndex((p) => p.path === path);
@@ -250,16 +336,18 @@ function openPage(path, { updateHash = true, reload = false } = {}) {
     return true;
   }
 
-  // 切り替え直後はスライドせずに目的のページへ置く
+  // 切り替え直後はスライドせずに目的のページへ置く。
+  // 紙が下からせり上がるのは最初の表示だけで、フォルダーの切り替えは上下に動かさずにふわっと出す
+  // （自動リロードで同じフォルダーを読み直すときは何もしない）
   els.track.classList.add('no-anim');
-  go(i, { updateHash });
+  go(i, { updateHash, rise: first });
   void els.track.offsetWidth;
   requestAnimationFrame(() => els.track.classList.remove('no-anim'));
 
-  if (switching) {
-    els.viewport.classList.remove('folder-in');
+  if (switching && !first) {
+    els.viewport.classList.remove('fade-in');
     void els.viewport.offsetWidth;
-    els.viewport.classList.add('folder-in');
+    els.viewport.classList.add('fade-in');
   }
   return true;
 }
@@ -270,6 +358,7 @@ async function loadTree() {
   const current = state.shelf[state.index]?.path;
   const res = await fetch('tree.json', { cache: 'no-store' });
   state.tree = await res.json();
+  applySettings(state.tree.settings ?? {});
   if (state.tree.live) startLiveReload();
   state.pages = flatten(state.tree);
   state.cache.clear();
@@ -277,8 +366,8 @@ async function loadTree() {
   if (!state.pages.length) {
     els.toc.innerHTML = '';
     els.track.innerHTML =
-      '<article class="page current"><div class="page-body markdown"><h1>ページがありません</h1>' +
-      '<p><code>pages/</code> フォルダーに Markdown ファイル（<code>.md</code>）を追加してください。</p></div></article>';
+      '<div class="slot current"><article class="page"><div class="page-body markdown"><h1>ページがありません</h1>' +
+      '<p><code>pages/</code> フォルダーに Markdown ファイル（<code>.md</code>）を追加してください。</p></div></article></div>';
     els.track.style.setProperty('--i', 0);
     state.folder = null;
     state.shelf = [];
@@ -295,6 +384,20 @@ async function loadTree() {
   openPage(target, { reload: true });
 }
 
+// settings/settings.json の内容を画面に反映する
+function applySettings(settings) {
+  // 紙（マークダウン）の最大幅。数値なら px
+  const width = Number(settings.pageWidth);
+  if (width > 0) document.documentElement.style.setProperty('--page-width', `${width}px`);
+  else document.documentElement.style.removeProperty('--page-width');
+
+  if (settings.title) {
+    $('bookTitle').textContent = settings.title;
+    const page = state.shelf[state.index];
+    document.title = page ? `${page.title} - ${settings.title}` : settings.title;
+  }
+}
+
 // ---------- 操作 ----------
 
 els.prev.addEventListener('click', () => go(state.index - 1));
@@ -307,7 +410,58 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft' || e.key === 'PageUp') { go(state.index - 1); e.preventDefault(); }
   if (e.key === 'Home') { go(0); e.preventDefault(); }
   if (e.key === 'End') { go(state.shelf.length - 1); e.preventDefault(); }
+
+  // 上下キー・スペースで紙を流す
+  const slot = currentSlot();
+  if (!slot || (e.key === ' ' && e.target instanceof Element && e.target.closest('button, a'))) return;
+  const step = { ArrowDown: 80, ArrowUp: -80, ' ': slot.clientHeight * 0.8 }[e.key];
+  if (step) {
+    slot.scrollBy({ top: e.key === ' ' && e.shiftKey ? -step : step, behavior: 'smooth' });
+    e.preventDefault();
+  }
 });
+
+const currentSlot = () => els.track.querySelector('.slot.current');
+
+// scroll はバブリングしないのでキャプチャで拾う
+els.track.addEventListener('scroll', (e) => {
+  const slot = e.target;
+  if (!slot.classList?.contains('slot')) return;
+  updateFade(slot);
+  const page = state.shelf[slot.dataset.index];
+  if (page) state.scroll.set(page.path, slot.scrollTop);
+  if (slot.classList.contains('current')) updateTopBtn();
+}, true);
+
+// ページの先頭へ戻るボタン（紙が完全に先頭にあるときだけ隠す）
+function updateTopBtn() {
+  els.top.classList.toggle('show', (currentSlot()?.scrollTop ?? 0) > 1);
+}
+els.top.addEventListener('click', () => {
+  currentSlot()?.scrollTo({ top: 0, behavior: 'smooth' });
+});
+els.track.addEventListener('animationend', (e) => updateFade(e.target.closest('.slot')));
+window.addEventListener('resize', () => [...els.track.children].forEach(updateFade));
+
+// 目次の出し入れなどで表示領域の幅が変わったら、紙の横位置を計算し直す
+// （幅に応じた位置指定が、ブラウザによっては自動で更新されないため）
+new ResizeObserver(() => {
+  els.track.classList.add('no-anim');
+  els.track.style.transform = 'none';
+  void els.track.offsetWidth;
+  els.track.style.transform = '';
+  void els.track.offsetWidth;
+  els.track.classList.remove('no-anim');
+  [...els.track.children].forEach(updateFade);
+}).observe(els.viewport);
+
+// 紙の外（余白や隣のページの上）でホイールを回しても、開いている紙を流す
+els.viewport.addEventListener('wheel', (e) => {
+  const slot = currentSlot();
+  if (!slot || slot.contains(e.target) || e.ctrlKey) return;
+  slot.scrollBy({ top: e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY });
+  e.preventDefault();
+}, { passive: false });
 
 window.addEventListener('hashchange', () => {
   const p = pathFromHash();
@@ -339,9 +493,73 @@ els.viewport.addEventListener('touchend', (e) => {
   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) go(state.index + (dx < 0 ? 1 : -1));
 });
 
-// スマホ用の目次ドロワー
+// 目次の出し入れ
+//   広い画面：目次の « でしまい、しまっている間だけ出る ☰ で戻す（次に開いたときも同じ状態にする）
+//   狭い画面：☰ で引き出しとして重ねて出し、« か外側のクリックで閉じる
 function closeMenu() { document.body.classList.remove('menu-open'); }
-els.menu.addEventListener('click', () => document.body.classList.toggle('menu-open'));
+const narrow = matchMedia('(max-width: 900px)');
+
+function setSidebarClosed(closed) {
+  document.body.classList.toggle('sidebar-closed', closed);
+  try { localStorage.setItem('sidebarClosed', closed ? '1' : ''); } catch {}
+}
+
+els.menu.addEventListener('click', () => {
+  if (narrow.matches) document.body.classList.toggle('menu-open');
+  else setSidebarClosed(false);
+});
+els.sidebarClose.addEventListener('click', () => {
+  if (narrow.matches) closeMenu();
+  else setSidebarClosed(true);
+});
+try { if (localStorage.getItem('sidebarClosed')) document.body.classList.add('sidebar-closed'); } catch {}
+
+// 境界線をドラッグして目次の幅を変える（広い画面のみ。幅は次に開いたときも同じにする）
+const SIDEBAR_MIN = 200;
+const SIDEBAR_MAX = 520;
+const resizer = $('sidebarResizer');
+
+function setSidebarWidth(px, save = true) {
+  const root = document.documentElement;
+  if (px == null) {
+    root.style.removeProperty('--sidebar-w');
+  } else {
+    px = Math.round(Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, px)));
+    root.style.setProperty('--sidebar-w', `${px}px`);
+  }
+  if (save) try { localStorage.setItem('sidebarWidth', px ?? ''); } catch {}
+}
+
+try {
+  const saved = Number(localStorage.getItem('sidebarWidth'));
+  if (saved) setSidebarWidth(saved, false);
+} catch {}
+
+resizer.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  resizer.setPointerCapture(e.pointerId);
+  document.body.classList.add('resizing');
+  const sidebar = $('sidebar').getBoundingClientRect();
+  let width = sidebar.width;
+  const move = (ev) => {
+    width = ev.clientX - sidebar.left;
+    setSidebarWidth(width, false);
+  };
+  const end = () => {
+    resizer.removeEventListener('pointermove', move);
+    resizer.removeEventListener('pointerup', end);
+    resizer.removeEventListener('pointercancel', end);
+    document.body.classList.remove('resizing');
+    setSidebarWidth(width); // 最後にドラッグした幅で確定して保存
+  };
+  resizer.addEventListener('pointermove', move);
+  resizer.addEventListener('pointerup', end);
+  resizer.addEventListener('pointercancel', end);
+});
+
+// ダブルクリックで元の幅に戻す
+resizer.addEventListener('dblclick', () => setSidebarWidth(null));
 els.scrim.addEventListener('click', closeMenu);
 
 // pages/ が変わったら自動で読み直す（npm start のときだけ。GitHub Pages では使わない）
