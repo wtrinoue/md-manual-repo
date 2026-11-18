@@ -1,5 +1,6 @@
 // md-manual サーバー（依存なし）
-//   /            → public/ の静的ファイル
+//   /            → ルートの index.html（設定を埋め込んで返す）
+//   /app.js など → public/ の静的ファイル
 //   /tree.json   → pages/ フォルダーの木構造と settings/settings.json の設定（JSON。本番では scripts/build.js が静的ファイルとして出力）
 //   /pages/...   → pages/ 内の Markdown や画像をそのまま配信
 //   /events      → pages/ と settings/ の変更を通知（自動リロード用の Server-Sent Events）
@@ -107,7 +108,7 @@ const server = http.createServer((req, res) => {
   // index.html にはタイトルなどの設定を埋め込んで返す
   if (pathname === '/' || pathname === '/index.html') {
     try {
-      const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+      const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
       return send(res, 200, applySettingsToHtml(html, readSettings(SETTINGS_FILE)), MIME['.html']);
     } catch (e) {
       return send(res, 500, String(e));

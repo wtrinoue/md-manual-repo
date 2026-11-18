@@ -74,7 +74,7 @@ pages/
 | `settings/settings.json` | タイトルなどの設定 |
 | `scripts/build.js` | GitHub Pages 用に `dist/` を出力（`tree.json` を静的ファイルとして生成） |
 | `.github/workflows/deploy.yml` | push 時に自動でビルド・公開 |
-| `public/index.html` | 画面の骨組み |
+| `index.html` | 画面の骨組み |
 | `public/app.js` | 目次・ページ送りのロジック |
 | `public/markdown.js` | Markdown パーサー（自作・依存なし） |
 | `public/style.css` | 見た目 |

@@ -1,6 +1,7 @@
 // GitHub Pages 用の静的サイトを dist/ に出力する
 //   dist/
-//   ├── index.html, app.js, ...  ← public/ の中身
+//   ├── index.html               ← ルートの index.html（設定を埋め込む）
+//   ├── app.js, style.css, ...   ← public/ の中身
 //   ├── pages/                   ← pages/ の中身（Markdown と画像）
 //   └── tree.json                ← pages/ の木構造と settings/settings.json の設定（サーバーの /tree.json の代わり）
 const fs = require('fs');
@@ -26,9 +27,9 @@ const settings = readSettings(path.join(ROOT, 'settings', 'settings.json'));
 const tree = { ...readTree(PAGES_DIR), settings };
 fs.writeFileSync(path.join(DIST, 'tree.json'), JSON.stringify(tree));
 
-// index.html にタイトルなどの設定を埋め込む
-const indexPath = path.join(DIST, 'index.html');
-fs.writeFileSync(indexPath, applySettingsToHtml(fs.readFileSync(indexPath, 'utf8'), settings));
+// ルートの index.html にタイトルなどの設定を埋め込んで出力する
+const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+fs.writeFileSync(path.join(DIST, 'index.html'), applySettingsToHtml(html, settings));
 
 // GitHub Pages の Jekyll 処理を無効にする
 fs.writeFileSync(path.join(DIST, '.nojekyll'), '');
