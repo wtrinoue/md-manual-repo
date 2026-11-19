@@ -200,11 +200,23 @@ async function loadPage(i) {
     h.textContent = page.title;
     body.prepend(h);
   }
+  highlightCode(body);
   addCopyButtons(body);
   // 自動リロードで描き直したときも、読んでいた位置に戻す
   slot.scrollTop = state.scroll.get(page.path) ?? 0;
   updateFade(slot);
   body.querySelectorAll('img').forEach((img) => img.addEventListener('load', () => updateFade(slot)));
+}
+
+// コードブロックを言語ごとに色分けする（highlight.js）
+// ```csharp のように言語名が書いてあり、highlight.js が知っている言語だけを対象にする
+function highlightCode(body) {
+  const hljs = window.hljs;
+  if (!hljs) return; // ライブラリが読み込めなかったときは色なしのまま
+  body.querySelectorAll('pre code[class*="language-"]').forEach((code) => {
+    const lang = code.className.match(/language-([\w+-]+)/)?.[1];
+    if (lang && hljs.getLanguage(lang)) hljs.highlightElement(code);
+  });
 }
 
 // コードブロック（``` で囲んだ部分）にコピーボタンを付ける
